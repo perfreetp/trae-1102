@@ -1,27 +1,30 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
-import { cn, getStatusName, getStatusColor, formatDate } from '../../utils';
+import { cn, getStatusName, getStatusColor } from '../../utils';
 import {
   ShoppingCart,
   Truck,
-  CheckCircle2,
   Plus,
   Minus,
   Send,
   PackageCheck,
+  AlertCircle,
 } from 'lucide-react';
 
 type TabType = 'suggest' | 'receive';
 
 export default function Replenishment() {
-  const { orderItems, updateOrderQty, submitOrders, confirmReceive } = useStore();
+  const { products, orderItems, updateOrderQty, submitOrders, confirmReceive } = useStore();
   const [activeTab, setActiveTab] = useState<TabType>('suggest');
   const [showReceiveModal, setShowReceiveModal] = useState<string | null>(null);
   const [receiveQty, setReceiveQty] = useState(0);
+  const [receiveRemark, setReceiveRemark] = useState('');
 
   const pendingOrders = orderItems.filter((o) => o.status === 'pending');
-  const submittedOrders = orderItems.filter((o) => o.status === 'submitted' || o.status === 'shipped');
-  const toReceiveOrders = orderItems.filter((o) => o.status === 'shipped');
+
+  const getProduct = (productId: string) => {
+    return products.find((p) => p.id === productId);
+  };
 
   const handleQtyChange = (id: string, delta: number) => {
     const order = orderItems.find((o) => o.id === id);
@@ -38,15 +41,21 @@ export default function Replenishment() {
   };
 
   const handleConfirmReceive = (id: string) => {
-    confirmReceive(id, receiveQty);
+    confirmReceive(id, receiveQty, receiveRemark);
     setShowReceiveModal(null);
     setReceiveQty(0);
+    setReceiveRemark('');
   };
 
-  const openReceiveModal = (id: string, suggestedQty: number) => {
-    setReceiveQty(suggestedQty);
+  const openReceiveModal = (id: string, orderedQty: number) => {
+    setReceiveQty(orderedQty);
+    setReceiveRemark('');
     setShowReceiveModal(id);
   };
+
+  const currentOrder = showReceiveModal
+    ? orderItems.find((o) => o.id === showReceiveModal)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -83,9 +92,9 @@ export default function Replenishment() {
         >
           <Truck className="w-4 h-4" />
           到货验收
-          {toReceiveOrders.length > 0 && (
+          {orderItems.filter((o) => o.status === 'shipped').length > 0 && (
             <span className="bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded-full">
-              {toReceiveOrders.length}
+              {orderItems.filter((o) => o.status === 'shipped').length}
             </span>
           )}
         </button>
@@ -125,52 +134,65 @@ export default function Replenishment() {
                 </tr>
               </thead>
               <tbody>
-                {orderItems.map((order) => (
-                  <tr key={order.id} className="border-t border-gray-50 hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-800">{order.productName}</td>
-                    <td className="py-3 px-4 text-center text-gray-600">
-                      {/* Simplified - using order data */}
-                      {Math.floor(Math.random() * 10 + 2)}
-                    </td>
-                    <td className="py-3 px-4 text-center text-gray-600">
-                      {Math.floor(order.suggestedQty / 2)}
-                    </td>
-                    <td className="py-3 px-4 text-center text-blue-600 font-medium">
-                      {order.suggestedQty}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleQtyChange(order.id, -1)}
-                          className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
-                          disabled={order.status !== 'pending'}
+                {orderItems.map((order) => {
+                  const product = getProduct(order.productId);
+                  return (
+                    <tr key={order.id} className="border-t border-gray-50 hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium text-gray-800">
+                        {order.productName}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={cn(
+                            'font-medium',
+                            product && product.stock < product.safeStock
+                              ? 'text-red-600'
+                              : 'text-gray-800'
+                          )}
                         >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="w-12 text-center font-medium text-gray-800">
-                          {order.actualQty}
+                          {product?.stock || 0}
                         </span>
-                        <button
-                          onClick={() => handleQtyChange(order.id, 1)}
-                          className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
-                          disabled={order.status !== 'pending'}
+                      </td>
+                      <td className="py-3 px-4 text-center text-gray-600">
+                        {product?.safeStock || order.suggestedQty}
+                      </td>
+                      <td className="py-3 px-4 text-center text-blue-600 font-medium">
+                        {order.suggestedQty}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleQtyChange(order.id, -1)}
+                            className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
+                            disabled={order.status !== 'pending'}
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-12 text-center font-medium text-gray-800">
+                            {order.actualQty}
+                          </span>
+                          <button
+                            onClick={() => handleQtyChange(order.id, 1)}
+                            className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
+                            disabled={order.status !== 'pending'}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={cn(
+                            'px-2.5 py-1 text-xs font-medium rounded-full',
+                            getStatusColor(order.status)
+                          )}
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={cn(
-                          'px-2.5 py-1 text-xs font-medium rounded-full',
-                          getStatusColor(order.status)
-                        )}
-                      >
-                        {getStatusName(order.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                          {getStatusName(order.status)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -187,6 +209,8 @@ export default function Replenishment() {
               <tr>
                 <th className="text-left py-3 px-4 font-medium text-gray-600">商品名称</th>
                 <th className="text-center py-3 px-4 font-medium text-gray-600">订货数量</th>
+                <th className="text-center py-3 px-4 font-medium text-gray-600">已验数量</th>
+                <th className="text-center py-3 px-4 font-medium text-gray-600">差异</th>
                 <th className="text-center py-3 px-4 font-medium text-gray-600">下单日期</th>
                 <th className="text-center py-3 px-4 font-medium text-gray-600">状态</th>
                 <th className="text-center py-3 px-4 font-medium text-gray-600">操作</th>
@@ -195,47 +219,89 @@ export default function Replenishment() {
             <tbody>
               {orderItems
                 .filter((o) => o.status !== 'pending')
-                .map((order) => (
-                  <tr key={order.id} className="border-t border-gray-50 hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-800">{order.productName}</td>
-                    <td className="py-3 px-4 text-center text-gray-600">{order.actualQty}</td>
-                    <td className="py-3 px-4 text-center text-gray-600">{order.createdAt}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={cn(
-                          'px-2.5 py-1 text-xs font-medium rounded-full',
-                          getStatusColor(order.status)
+                .map((order) => {
+                  const diff =
+                    order.receivedQty !== undefined ? order.receivedQty - order.actualQty : null;
+                  return (
+                    <tr key={order.id} className="border-t border-gray-50 hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium text-gray-800">
+                        {order.productName}
+                      </td>
+                      <td className="py-3 px-4 text-center text-gray-600">{order.actualQty}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="font-medium text-emerald-600">
+                          {order.receivedQty !== undefined ? order.receivedQty : '-'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {diff !== null ? (
+                          <span
+                            className={cn(
+                              'font-medium',
+                              diff === 0
+                                ? 'text-emerald-600'
+                                : diff < 0
+                                ? 'text-red-600'
+                                : 'text-orange-600'
+                            )}
+                          >
+                            {diff > 0 ? '+' : ''}
+                            {diff}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
                         )}
-                      >
-                        {getStatusName(order.status)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {order.status === 'shipped' && (
-                        <button
-                          onClick={() => openReceiveModal(order.id, order.actualQty)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 transition-colors"
+                      </td>
+                      <td className="py-3 px-4 text-center text-gray-600">{order.createdAt}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={cn(
+                            'px-2.5 py-1 text-xs font-medium rounded-full',
+                            getStatusColor(order.status)
+                          )}
                         >
-                          <PackageCheck className="w-3.5 h-3.5" />
-                          验收
-                        </button>
-                      )}
-                      {order.status === 'received' && (
-                        <span className="text-gray-400 text-xs">{order.receivedAt} 已验收</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                          {getStatusName(order.status)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {order.status === 'shipped' && (
+                          <button
+                            onClick={() => openReceiveModal(order.id, order.actualQty)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 transition-colors"
+                          >
+                            <PackageCheck className="w-3.5 h-3.5" />
+                            验收
+                          </button>
+                        )}
+                        {order.status === 'received' && (
+                          <div className="text-xs">
+                            <p className="text-gray-500">{order.receivedAt} 已验收</p>
+                            {order.remark && (
+                              <p className="text-gray-400 truncate max-w-[120px]">
+                                备注: {order.remark}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
       )}
 
-      {showReceiveModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+      {showReceiveModal && currentOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">到货验收</h3>
             <div className="space-y-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium text-gray-800">{currentOrder.productName}</p>
+                <p className="text-xs text-gray-500 mt-1">订货数量: {currentOrder.actualQty}</p>
+              </div>
+
               <div>
                 <label className="block text-sm text-gray-600 mb-1">实际到货数量</label>
                 <div className="flex items-center gap-3">
@@ -248,7 +314,9 @@ export default function Replenishment() {
                   <input
                     type="number"
                     value={receiveQty}
-                    onChange={(e) => setReceiveQty(Math.max(0, parseInt(e.target.value) || 0))}
+                    onChange={(e) =>
+                      setReceiveQty(Math.max(0, parseInt(e.target.value) || 0))
+                    }
                     className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-center text-lg font-medium"
                   />
                   <button
@@ -258,7 +326,26 @@ export default function Replenishment() {
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+                {receiveQty !== currentOrder.actualQty && (
+                  <p className="text-xs text-orange-600 mt-2 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    与订货数量差异: {receiveQty - currentOrder.actualQty > 0 ? '+' : ''}
+                    {receiveQty - currentOrder.actualQty}
+                  </p>
+                )}
               </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">差异备注（可选）</label>
+                <textarea
+                  rows={3}
+                  value={receiveRemark}
+                  onChange={(e) => setReceiveRemark(e.target.value)}
+                  placeholder="如有差异，请说明原因..."
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowReceiveModal(null)}
@@ -267,10 +354,10 @@ export default function Replenishment() {
                   取消
                 </button>
                 <button
-                  onClick={() => handleConfirmReceive(showReceiveModal)}
+                  onClick={() => handleConfirmReceive(currentOrder.id)}
                   className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <PackageCheck className="w-4 h-4" />
                   确认验收
                 </button>
               </div>

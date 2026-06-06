@@ -118,3 +118,12 @@ export interface ShelfSlot {
   productId?: string;
   productName?: string;
 }
+
+export interface DisplayPhoto {
+  id: string;
+  url: string;
+  productId?: string;
+  shelfSlotId?: string;
+  shelfPosition?: string;
+  uploadedAt: string;
+}

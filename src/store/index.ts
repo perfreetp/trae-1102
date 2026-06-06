@@ -11,6 +11,7 @@ import type {
   SalesData,
   TodoItem,
   ShelfSlot,
+  DisplayPhoto,
 } from '../types';
 import {
   products as mockProducts,
@@ -38,17 +39,32 @@ interface StoreState {
   salesData: SalesData[];
   todoItems: TodoItem[];
   shelfSlots: ShelfSlot[];
+  displayPhotos: DisplayPhoto[];
+
   updateOrderQty: (id: string, qty: number) => void;
   submitOrders: () => void;
-  confirmReceive: (id: string, qty: number) => void;
+  confirmReceive: (id: string, qty: number, remark?: string) => void;
+
   approveLeave: (id: string) => void;
   rejectLeave: (id: string) => void;
+  addLeave: (leave: Omit<Leave, 'id' | 'status' | 'createdAt'>) => void;
+
   addEquipmentFault: (fault: Omit<EquipmentFault, 'id' | 'reportTime' | 'status'>) => void;
-  addInspection: (inspection: Omit<Inspection, 'id' | 'date'>) => void;
   updateFaultStatus: (id: string, status: EquipmentFault['status']) => void;
+
+  addInspection: (inspection: Omit<Inspection, 'id' | 'date'>) => void;
+
+  updatePromotionStatus: (id: string, status: Promotion['status']) => void;
+
+  updateShelfSlot: (slotId: string, productId: string | null) => void;
+
+  addShift: (shift: Omit<Shift, 'id'>) => void;
+  updateShift: (id: string, shift: Partial<Omit<Shift, 'id'>>) => void;
+
+  addDisplayPhoto: (photo: Omit<DisplayPhoto, 'id' | 'uploadedAt'>) => void;
 }
 
-export const useStore = create<StoreState>((set) => ({
+export const useStore = create<StoreState>((set, get) => ({
   products: mockProducts,
   orderItems: mockOrders,
   employees: mockEmployees,
@@ -60,6 +76,7 @@ export const useStore = create<StoreState>((set) => ({
   salesData: mockSalesData,
   todoItems: mockTodos,
   shelfSlots: mockShelfSlots,
+  displayPhotos: [],
 
   updateOrderQty: (id, qty) =>
     set((state) => ({
@@ -75,11 +92,17 @@ export const useStore = create<StoreState>((set) => ({
       ),
     })),
 
-  confirmReceive: (id, qty) =>
+  confirmReceive: (id, qty, remark) =>
     set((state) => ({
       orderItems: state.orderItems.map((o) =>
         o.id === id
-          ? { ...o, status: 'received' as const, receivedQty: qty, receivedAt: new Date().toISOString().split('T')[0] }
+          ? {
+              ...o,
+              status: 'received' as const,
+              receivedQty: qty,
+              receivedAt: new Date().toISOString().split('T')[0],
+              remark: remark || o.remark,
+            }
           : o
       ),
     })),
@@ -98,6 +121,19 @@ export const useStore = create<StoreState>((set) => ({
       ),
     })),
 
+  addLeave: (leave) =>
+    set((state) => ({
+      leaves: [
+        {
+          ...leave,
+          id: `L${String(state.leaves.length + 1).padStart(3, '0')}`,
+          status: 'pending' as const,
+          createdAt: new Date().toISOString().split('T')[0],
+        },
+        ...state.leaves,
+      ],
+    })),
+
   addEquipmentFault: (fault) =>
     set((state) => ({
       equipmentFaults: [
@@ -109,6 +145,13 @@ export const useStore = create<StoreState>((set) => ({
         },
         ...state.equipmentFaults,
       ],
+    })),
+
+  updateFaultStatus: (id, status) =>
+    set((state) => ({
+      equipmentFaults: state.equipmentFaults.map((f) =>
+        f.id === id ? { ...f, status } : f
+      ),
     })),
 
   addInspection: (inspection) =>
@@ -123,10 +166,87 @@ export const useStore = create<StoreState>((set) => ({
       ],
     })),
 
-  updateFaultStatus: (id, status) =>
+  updatePromotionStatus: (id, status) =>
     set((state) => ({
-      equipmentFaults: state.equipmentFaults.map((f) =>
-        f.id === id ? { ...f, status } : f
+      promotions: state.promotions.map((p) =>
+        p.id === id ? { ...p, status } : p
       ),
+    })),
+
+  updateShelfSlot: (slotId, productId) =>
+    set((state) => {
+      const slot = state.shelfSlots.find((s) => s.id === slotId);
+      if (!slot) return state;
+
+      const position = `A${slot.row}-${slot.col}`;
+      const product = productId
+        ? state.products.find((p) => p.id === productId)
+        : null;
+
+      const newShelfSlots = state.shelfSlots.map((s) => {
+        if (s.id === slotId) {
+          return {
+            ...s,
+            productId: productId || undefined,
+            productName: product?.name,
+          };
+        }
+        if (productId && s.productId === productId && s.id !== slotId) {
+          return { ...s, productId: undefined, productName: undefined };
+        }
+        return s;
+      });
+
+      const newProducts = state.products.map((p) => {
+        if (p.id === productId) {
+          return { ...p, shelfPosition: position };
+        }
+        if (slot.productId === p.id) {
+          return { ...p, shelfPosition: '' };
+        }
+        return p;
+      });
+
+      return { shelfSlots: newShelfSlots, products: newProducts };
+    }),
+
+  addShift: (shift) =>
+    set((state) => {
+      const existingIndex = state.shifts.findIndex(
+        (s) => s.employeeId === shift.employeeId && s.date === shift.date
+      );
+
+      if (existingIndex >= 0) {
+        const newShifts = [...state.shifts];
+        newShifts[existingIndex] = { ...newShifts[existingIndex], ...shift };
+        return { shifts: newShifts };
+      }
+
+      return {
+        shifts: [
+          {
+            ...shift,
+            id: `S${String(state.shifts.length + 1).padStart(4, '0')}`,
+          },
+          ...state.shifts,
+        ],
+      };
+    }),
+
+  updateShift: (id, shift) =>
+    set((state) => ({
+      shifts: state.shifts.map((s) => (s.id === id ? { ...s, ...shift } : s)),
+    })),
+
+  addDisplayPhoto: (photo) =>
+    set((state) => ({
+      displayPhotos: [
+        {
+          ...photo,
+          id: `DP${String(state.displayPhotos.length + 1).padStart(4, '0')}`,
+          uploadedAt: new Date().toISOString(),
+        },
+        ...state.displayPhotos,
+      ],
     })),
 }));
